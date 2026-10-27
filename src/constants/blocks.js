@@ -89,3 +89,35 @@ export const createBlockInstance = (template) => {
     children: template.children ? template.children.map(createBlockInstance) : undefined,
   };
 };
+
+export const findBlockById = (blocks, id) => {
+  if (!blocks || !id) return null;
+  for (const b of blocks) {
+    if (b.id === id) return b;
+    if (b.children) {
+      const found = findBlockById(b.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+export const findFirstRepeat = (blocks) => {
+  if (!blocks) return null;
+  for (const b of blocks) {
+    if (b.type === "REPEAT") return b;
+    if (b.children) {
+      const found = findFirstRepeat(b.children);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+export const removeBlockById = (blocks, id) => {
+  if (!blocks || !id) return [];
+  return blocks
+    .filter((b) => b.id !== id)
+    .map((b) => (b.children ? { ...b, children: removeBlockById(b.children, id) } : b));
+};
+

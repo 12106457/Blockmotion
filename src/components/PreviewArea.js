@@ -95,65 +95,75 @@ export default function PreviewArea({
       {/* Stage Control Toolbar */}
       <div className="h-12 bg-white border-b border-gray-200 px-3 flex items-center justify-between shadow-xs">
         <div className="flex items-center space-x-2">
-          {/* Green Flag Play Button */}
+          {/* Primary Green Flag Run Button */}
           <button
             type="button"
             onClick={onPlay}
             disabled={isRunning}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shadow-sm ${
-              isRunning
-                ? "bg-green-100 text-green-300 cursor-not-allowed"
-                : "bg-green-500 hover:bg-green-600 active:scale-95 text-white ring-2 ring-green-200"
-            }`}
-            title="Start animating all sprites (Green Flag)"
+            className={`px-3 py-1.5 rounded-lg flex items-center space-x-1.5 text-xs font-bold transition-all shadow-sm ${isRunning
+              ? "bg-green-100 text-green-400 cursor-not-allowed border border-green-200"
+              : "bg-green-600 hover:bg-green-500 active:scale-95 text-white ring-2 ring-green-300 ring-offset-1"
+              }`}
+            title="Run scripts for all sprites (Green Flag)"
+            aria-label="Run scripts for all sprites"
           >
-            <Icon name="flag" size={18} className="text-white" />
+            <Icon name="flag" size={15} className="text-white" />
+            <span>Run</span>
           </button>
 
-          {/* Red Stop Button */}
+          {/* Primary Red Stop Button */}
           <button
             type="button"
             onClick={onStop}
-            className="w-9 h-9 rounded-full bg-red-500 hover:bg-red-600 active:scale-95 text-white flex items-center justify-center shadow-sm ring-2 ring-red-200 transition-all"
-            title="Stop all animations"
+            disabled={!isRunning}
+            className={`px-3 py-1.5 rounded-lg flex items-center space-x-1.5 text-xs font-bold transition-all shadow-sm ${!isRunning
+              ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+              : "bg-red-500 hover:bg-red-600 active:scale-95 text-white ring-2 ring-red-300 ring-offset-1"
+              }`}
+            title="Stop all running scripts and animations"
+            aria-label="Stop all running scripts and animations"
           >
-            <Icon name="stop" size={15} />
+            <Icon name="stop" size={13} />
+            <span>Stop</span>
           </button>
 
           {/* Reset Button */}
           <button
             type="button"
             onClick={onReset}
-            className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            className="px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition-colors border border-gray-200 flex items-center space-x-1"
             title="Reset sprites to starting positions"
+            aria-label="Reset sprites to starting positions"
           >
-            Reset
+            <Icon name="sync" size={11} className="text-gray-500" />
+            <span>Reset</span>
           </button>
         </div>
 
         {/* Hero Feature Toggle & Demo Loader */}
         <div className="flex items-center space-x-2">
-          <button
+          {/* <button
             type="button"
             onClick={onToggleHeroFeature}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-full flex items-center space-x-1.5 transition-all shadow-xs ${
-              heroFeatureEnabled
+            className={`px-2.5 py-1 text-xs font-semibold rounded-full flex items-center space-x-1.5 transition-all shadow-xs ${heroFeatureEnabled
                 ? "bg-amber-100 text-amber-800 border border-amber-300 ring-1 ring-amber-300"
                 : "bg-gray-100 text-gray-500 border border-gray-200"
-            }`}
-            title="Collision-based animation swap feature"
+              }`}
+            title="Toggle collision animation swap feature"
+            aria-label="Toggle collision animation swap feature"
           >
             <Icon name="bolt" size={13} className={heroFeatureEnabled ? "text-amber-600" : "text-gray-400"} />
             <span>Hero Swap: {heroFeatureEnabled ? "ON" : "OFF"}</span>
-          </button>
+          </button> */}
 
           <button
             type="button"
             onClick={onLoadHeroDemo}
             className="px-2.5 py-1 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-md shadow-xs transition-all active:scale-95 flex items-center space-x-1"
             title="Load the collision swap demo scenario from challenge document"
+            aria-label="Load collision swap demo scenario"
           >
-            <span>⚡ Demo</span>
+            <span>⚡ Hero Demo</span>
           </button>
         </div>
       </div>
@@ -199,9 +209,8 @@ export default function PreviewArea({
               <div
                 key={sprite.id}
                 onPointerDown={(e) => handleSpritePointerDown(e, sprite)}
-                className={`absolute select-none cursor-grab active:cursor-grabbing transition-transform ${
-                  isSelected ? "z-20" : "z-10"
-                }`}
+                className={`absolute select-none cursor-grab active:cursor-grabbing transition-transform ${isSelected ? "z-20" : "z-10"
+                  }`}
                 style={{
                   left: `${pixelX}px`,
                   top: `${pixelY}px`,
@@ -235,9 +244,8 @@ export default function PreviewArea({
 
                 {/* Cat Sprite Character */}
                 <div
-                  className={`w-full h-full flex items-center justify-center p-1 rounded-full transition-all ${
-                    isSelected ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-white" : ""
-                  }`}
+                  className={`w-full h-full flex items-center justify-center p-1 rounded-full transition-all ${isSelected ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-white" : ""
+                    }`}
                   style={{
                     transform: `rotate(${rotationDeg}deg)`,
                   }}
@@ -278,11 +286,13 @@ export default function PreviewArea({
               <span className="text-gray-400 font-mono">x:</span>
               <input
                 type="number"
+                disabled={isRunning}
                 value={activeSprite.x}
                 onChange={(e) =>
                   onUpdateSprite(activeSprite.id, { x: parseFloat(e.target.value) || 0 })
                 }
-                className="w-12 border border-gray-300 rounded px-1 py-0.5 text-center font-mono text-xs focus:ring-1 focus:ring-blue-400"
+                className={`w-12 border border-gray-300 rounded px-1 py-0.5 text-center font-mono text-xs focus:ring-1 focus:ring-blue-400 ${isRunning ? "bg-gray-100 text-gray-500 cursor-not-allowed" : "bg-white"
+                  }`}
               />
             </label>
 
@@ -290,11 +300,13 @@ export default function PreviewArea({
               <span className="text-gray-400 font-mono">y:</span>
               <input
                 type="number"
+                disabled={isRunning}
                 value={activeSprite.y}
                 onChange={(e) =>
                   onUpdateSprite(activeSprite.id, { y: parseFloat(e.target.value) || 0 })
                 }
-                className="w-12 border border-gray-300 rounded px-1 py-0.5 text-center font-mono text-xs focus:ring-1 focus:ring-blue-400"
+                className={`w-12 border border-gray-300 rounded px-1 py-0.5 text-center font-mono text-xs focus:ring-1 focus:ring-blue-400 ${isRunning ? "bg-gray-100 text-gray-500 cursor-not-allowed" : "bg-white"
+                  }`}
               />
             </label>
 
@@ -302,13 +314,15 @@ export default function PreviewArea({
               <span className="text-gray-400 font-mono">dir:</span>
               <input
                 type="number"
+                disabled={isRunning}
                 value={activeSprite.direction ?? 90}
                 onChange={(e) =>
                   onUpdateSprite(activeSprite.id, {
                     direction: parseFloat(e.target.value) || 0,
                   })
                 }
-                className="w-12 border border-gray-300 rounded px-1 py-0.5 text-center font-mono text-xs focus:ring-1 focus:ring-blue-400"
+                className={`w-12 border border-gray-300 rounded px-1 py-0.5 text-center font-mono text-xs focus:ring-1 focus:ring-blue-400 ${isRunning ? "bg-gray-100 text-gray-500 cursor-not-allowed" : "bg-white"
+                  }`}
               />
             </label>
           </div>
@@ -328,11 +342,10 @@ export default function PreviewArea({
             <div
               key={sprite.id}
               onClick={() => onSelectSprite(sprite.id)}
-              className={`relative flex-none w-20 h-22 rounded-lg p-1.5 flex flex-col items-center justify-between cursor-pointer transition-all border ${
-                isSelected
-                  ? "bg-blue-50 border-blue-500 ring-2 ring-blue-400 shadow-sm"
-                  : "bg-white border-gray-200 hover:border-gray-300"
-              }`}
+              className={`relative flex-none w-20 h-22 rounded-lg p-1.5 flex flex-col items-center justify-between cursor-pointer transition-all border ${isSelected
+                ? "bg-blue-50 border-blue-500 ring-2 ring-blue-400 shadow-sm"
+                : "bg-white border-gray-200 hover:border-gray-300"
+                }`}
             >
               {/* Delete button if more than 1 sprite */}
               {sprites.length > 1 && (
@@ -340,12 +353,15 @@ export default function PreviewArea({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     onDeleteSprite(sprite.id);
                   }}
-                  className="absolute top-1 right-1 text-gray-400 hover:text-red-500 p-0.5 rounded transition-colors"
-                  title="Delete Sprite"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-500 text-gray-400 hover:text-white transition-all shadow-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+                  title={`Delete ${sprite.name}`}
+                  aria-label={`Delete ${sprite.name}`}
                 >
-                  <Icon name="trash" size={10} />
+                  <Icon name="trash" size={11} />
                 </button>
               )}
 

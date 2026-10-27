@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import BlockItem from "./BlockItem";
 import Icon from "./Icon";
-import { createBlockInstance } from "../constants/blocks";
+import { createBlockInstance, removeBlockById } from "../constants/blocks";
 
 export default function MidArea({
   activeSprite,
+  isRunning = false,
   onUpdateSpriteActions,
   onRunSpriteScript,
   onClearSpriteScript,
@@ -45,12 +46,13 @@ export default function MidArea({
         // Adding new block from sidebar
         const newBlock = createBlockInstance(data.blockTemplate);
         onUpdateSpriteActions([...actions, newBlock]);
-      } else if (data.blockId && draggedBlockIndex !== null) {
-        // Reordering within root list
-        // (already handled or appended)
+      } else if (data.blockId && data.block) {
+        // Move existing block (even from inside repeat) to root end
+        const cleaned = removeBlockById(actions, data.blockId);
+        onUpdateSpriteActions([...cleaned, data.block]);
       }
     } catch (err) {
-      console.error("Drop error", err);
+      console.error("Drop root error", err);
     }
   };
 
@@ -70,17 +72,7 @@ export default function MidArea({
   };
 
   const handleDeleteBlock = (blockId) => {
-    const deleteRecursive = (list) => {
-      return list
-        .filter((b) => b.id !== blockId)
-        .map((b) => {
-          if (b.children) {
-            return { ...b, children: deleteRecursive(b.children) };
-          }
-          return b;
-        });
-    };
-    onUpdateSpriteActions(deleteRecursive(actions));
+    onUpdateSpriteActions(removeBlockById(actions, blockId));
   };
 
   const handleDropNested = (repeatBlockId, e) => {
@@ -90,12 +82,16 @@ export default function MidArea({
       const data = JSON.parse(dataStr);
 
       let blockToAdd = null;
+      let cleanedActions = actions;
+
       if (data.isFromSidebar && data.blockTemplate) {
         blockToAdd = createBlockInstance(data.blockTemplate);
-      } else if (data.block) {
+      } else if (data.block && data.block.id) {
+        // Prevent nesting a repeat block into itself
+        if (data.block.id === repeatBlockId) return;
         blockToAdd = data.block;
-        // remove old instance from root if it was moved from root
-        handleDeleteBlock(data.block.id);
+        // remove old instance from wherever it was
+        cleanedActions = removeBlockById(actions, data.block.id);
       }
 
       if (!blockToAdd) return;
@@ -115,7 +111,7 @@ export default function MidArea({
         });
       };
 
-      onUpdateSpriteActions(addToRepeatRecursive(actions));
+      onUpdateSpriteActions(addToRepeatRecursive(cleanedActions));
     } catch (err) {
       console.error("Drop nested error", err);
     }
@@ -136,7 +132,7 @@ export default function MidArea({
     e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleBlockDragOver = (e, targetIndex) => {
+  const handleBlockDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
   };
@@ -154,15 +150,14 @@ export default function MidArea({
         const newActions = [...actions];
         newActions.splice(targetIndex, 0, newBlock);
         onUpdateSpriteActions(newActions);
-      } else if (data.blockId) {
-        // Reordering
-        const fromIndex = actions.findIndex((b) => b.id === data.blockId);
-        if (fromIndex !== -1 && fromIndex !== targetIndex) {
-          const newActions = [...actions];
-          const [moved] = newActions.splice(fromIndex, 1);
-          newActions.splice(targetIndex, 0, moved);
-          onUpdateSpriteActions(newActions);
-        }
+      } else if (data.blockId && data.block) {
+        // Reordering or moving out of nested container
+        const cleaned = removeBlockById(actions, data.blockId);
+        const newActions = [...cleaned];
+        // Calculate insert index bounded by array length
+        const safeIndex = Math.min(targetIndex, newActions.length);
+        newActions.splice(safeIndex, 0, data.block);
+        onUpdateSpriteActions(newActions);
       }
     } catch (err) {
       console.error("Reorder drop error", err);
@@ -188,34 +183,48 @@ export default function MidArea({
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* Test This Sprite's Script */}
           <button
             type="button"
-            onClick={() => onRunSpriteScript && onRunSpriteScript(activeSprite.id)}
-            disabled={actions.length === 0}
-            className={`px-3 py-1 text-xs font-semibold rounded-md shadow-sm flex items-center space-x-1.5 transition-all ${
-              actions.length === 0
+            onClick={() => !isRunning && onRunSpriteScript && onRunSpriteScript(activeSprite.id)}
+            disabled={isRunning || actions.length === 0}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md shadow-sm flex items-center space-x-1.5 transition-all ${
+              isRunning || actions.length === 0
                 ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                : "bg-green-600 hover:bg-green-700 text-white active:scale-95"
+                : "bg-blue-600 hover:bg-blue-700 text-white active:scale-95"
             }`}
-            title="Run only this sprite's code"
+            title={
+              isRunning
+                ? "Execution in progress"
+                : actions.length === 0
+                ? "No blocks to run"
+                : "Test only this sprite's code"
+            }
+            aria-label="Test only this sprite's script"
           >
-            <Icon name="play" size={12} />
-            <span>Run This</span>
+            <Icon name="play" size={11} />
+            <span>Test Sprite</span>
           </button>
 
+          {/* Clear Script */}
           <button
             type="button"
-            onClick={() => onClearSpriteScript && onClearSpriteScript(activeSprite.id)}
-            disabled={actions.length === 0}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md border flex items-center space-x-1 transition-all ${
-              actions.length === 0
-                ? "border-gray-200 text-gray-300 cursor-not-allowed"
+            onClick={() => !isRunning && onClearSpriteScript && onClearSpriteScript(activeSprite.id)}
+            disabled={isRunning || actions.length === 0}
+            className={`px-2.5 py-1.5 text-xs font-medium rounded-md border flex items-center space-x-1.5 transition-all ${
+              isRunning || actions.length === 0
+                ? "border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50"
                 : "border-gray-300 text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
             }`}
-            title="Clear all blocks in this script"
+            title="Clear all blocks for this sprite"
+            aria-label="Clear all blocks for this sprite"
           >
-            <Icon name="trash" size={12} />
-            <span>Clear</span>
+            <Icon
+              name="trash"
+              size={12}
+              className={isRunning || actions.length === 0 ? "text-gray-300" : "text-red-500"}
+            />
+            <span>Clear Script</span>
           </button>
         </div>
       </div>
@@ -257,7 +266,7 @@ export default function MidArea({
             {actions.map((block, idx) => (
               <div
                 key={block.id || idx}
-                onDragOver={(e) => handleBlockDragOver(e, idx)}
+                onDragOver={handleBlockDragOver}
                 onDrop={(e) => handleBlockDrop(e, idx)}
                 className="transition-all"
               >
@@ -268,7 +277,7 @@ export default function MidArea({
                   onDeleteBlock={handleDeleteBlock}
                   onDragStart={handleDragStartBlock}
                   onDropNested={handleDropNested}
-                  onRunSingle={() => onRunSpriteScript && onRunSpriteScript(activeSprite.id)}
+                  onRunSingle={() => !isRunning && onRunSpriteScript && onRunSpriteScript(activeSprite.id)}
                 />
               </div>
             ))}
@@ -278,3 +287,4 @@ export default function MidArea({
     </div>
   );
 }
+

@@ -50,11 +50,10 @@ export default function Sidebar({ onAddBlock }) {
                 key={cat.id}
                 type="button"
                 onClick={() => setActiveCategory(cat.id)}
-                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-all flex items-center space-x-1.5 ${
-                  isActive
-                    ? "bg-gray-800 text-white shadow-sm ring-1 ring-gray-700"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
+                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-all flex items-center space-x-1.5 ${isActive
+                  ? "bg-gray-800 text-white shadow-sm ring-1 ring-gray-700"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
               >
                 <span
                   className="w-2 h-2 rounded-full inline-block"

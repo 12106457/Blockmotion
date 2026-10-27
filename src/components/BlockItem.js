@@ -265,12 +265,15 @@ export default function BlockItem({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     onDeleteBlock(block.id);
                   }}
-                  className="text-white hover:text-red-200 p-0.5 rounded opacity-75 hover:opacity-100 transition-opacity ml-2"
-                  title="Delete Block"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="w-5 h-5 flex items-center justify-center rounded-full text-white bg-black bg-opacity-10 hover:bg-red-600 hover:text-white transition-all focus:outline-none focus:ring-1 focus:ring-white active:scale-90 ml-2"
+                  title="Delete repeat block"
+                  aria-label="Delete repeat block"
                 >
-                  <Icon name="trash" size={13} />
+                  <Icon name="trash" size={11} />
                 </button>
               )}
             </div>
@@ -357,12 +360,15 @@ export default function BlockItem({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
+            e.preventDefault();
             onDeleteBlock(block.id);
           }}
-          className="mr-2 text-white hover:text-red-200 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Delete Block"
+          onMouseDown={(e) => e.stopPropagation()}
+          className="ml-auto mr-1.5 w-5 h-5 flex items-center justify-center rounded-full text-white bg-black bg-opacity-10 hover:bg-red-600 hover:text-white opacity-40 group-hover:opacity-100 hover:!opacity-100 transition-all focus:outline-none focus:ring-1 focus:ring-white active:scale-90"
+          title="Delete block"
+          aria-label="Delete block"
         >
-          <Icon name="trash" size={13} />
+          <Icon name="trash" size={11} />
         </button>
       )}
     </div>

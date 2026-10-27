@@ -3,7 +3,11 @@ import Sidebar from "./components/Sidebar";
 import MidArea from "./components/MidArea";
 import PreviewArea from "./components/PreviewArea";
 import Icon from "./components/Icon";
-import { createBlockInstance } from "./constants/blocks";
+import {
+  createBlockInstance,
+  findBlockById,
+  findFirstRepeat,
+} from "./constants/blocks";
 
 const SPRITE_COLORS = [
   "#FFAB19", // Classic Scratch Orange
@@ -13,7 +17,7 @@ const SPRITE_COLORS = [
   "#8B5CF6", // Purple
 ];
 
-const COLLISION_THRESHOLD = 60; // Pixels distance between sprite centers
+const COLLISION_THRESHOLD = 65; // Pixels distance between sprite centers for touching bounds
 
 export default function App() {
   const [sprites, setSprites] = useState([
@@ -30,7 +34,7 @@ export default function App() {
         createBlockInstance({
           type: "REPEAT",
           category: "controls",
-          times: 15,
+          times: 20,
           children: [
             createBlockInstance({ type: "MOVE_STEPS", category: "motion", steps: 10 }),
           ],
@@ -50,7 +54,7 @@ export default function App() {
         createBlockInstance({
           type: "REPEAT",
           category: "controls",
-          times: 15,
+          times: 20,
           children: [
             createBlockInstance({ type: "MOVE_STEPS", category: "motion", steps: -10 }),
           ],
@@ -64,30 +68,68 @@ export default function App() {
   const [heroFeatureEnabled, setHeroFeatureEnabled] = useState(true);
   const [collisionNotification, setCollisionNotification] = useState(null);
 
-  // References to keep track of running state and avoid stale closures
+  // Synchronous execution engine references to avoid stale closures and race conditions
   const isRunningRef = useRef(false);
-  const spritesRef = useRef(sprites);
-  spritesRef.current = sprites;
+  const executionEpochRef = useRef(0);
+  const runtimeStateRef = useRef({});
+  const activeTimeoutsRef = useRef(new Set());
+  const collidingPairsRef = useRef(new Set());
 
-  const collisionCooldownRef = useRef(false);
-  const runningAbortControllers = useRef(new Map());
-
-  // Helper sleep function that supports abort cancellation
-  const sleep = (ms) => {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => resolve(), ms);
-      if (!isRunningRef.current) {
-        clearTimeout(timer);
-        reject(new Error("aborted"));
+  // Keep runtime state synchronized with sprite state
+  useEffect(() => {
+    const map = { ...runtimeStateRef.current };
+    sprites.forEach((s) => {
+      if (!map[s.id] || !isRunningRef.current) {
+        map[s.id] = { ...s };
+      } else {
+        // While running, keep real-time x, y, direction but sync actions, name, color
+        map[s.id] = {
+          ...map[s.id],
+          name: s.name,
+          color: s.color,
+          actions: s.actions,
+        };
       }
     });
+    // Remove any sprites that were deleted
+    Object.keys(map).forEach((id) => {
+      if (!sprites.some((s) => s.id === id)) {
+        delete map[id];
+      }
+    });
+    runtimeStateRef.current = map;
+  }, [sprites]);
+
+  // Clean cancellation sleep helper
+  const sleep = (ms, epoch) => {
+    return new Promise((resolve, reject) => {
+      if (!isRunningRef.current || executionEpochRef.current !== epoch) {
+        return reject(new Error("aborted"));
+      }
+      const timer = setTimeout(() => {
+        activeTimeoutsRef.current.delete(timer);
+        if (!isRunningRef.current || executionEpochRef.current !== epoch) {
+          return reject(new Error("aborted"));
+        }
+        resolve();
+      }, ms);
+      activeTimeoutsRef.current.add(timer);
+    });
+  };
+
+  // Immediate runtime and state update for smooth animation & sync
+  const updateSpriteRuntime = (spriteId, updates) => {
+    if (runtimeStateRef.current[spriteId]) {
+      Object.assign(runtimeStateRef.current[spriteId], updates);
+    }
+    setSprites((prev) =>
+      prev.map((s) => (s.id === spriteId ? { ...s, ...updates } : s))
+    );
   };
 
   // Update a single sprite in state
   const handleUpdateSprite = (spriteId, updates) => {
-    setSprites((prev) =>
-      prev.map((s) => (s.id === spriteId ? { ...s, ...updates } : s))
-    );
+    updateSpriteRuntime(spriteId, updates);
   };
 
   // Update actions for a sprite
@@ -125,9 +167,22 @@ export default function App() {
     setActiveSpriteId(newSprite.id);
   };
 
-  // Delete a sprite
+  // Delete a sprite and clean up its runtime resources
   const handleDeleteSprite = (spriteId) => {
     if (sprites.length <= 1) return;
+
+    // Clean up runtime state
+    delete runtimeStateRef.current[spriteId];
+
+    // Clean up collision pairs
+    const pairsToDelete = [];
+    collidingPairsRef.current.forEach((pair) => {
+      if (pair.includes(spriteId)) {
+        pairsToDelete.push(pair);
+      }
+    });
+    pairsToDelete.forEach((p) => collidingPairsRef.current.delete(p));
+
     setSprites((prev) => {
       const filtered = prev.filter((s) => s.id !== spriteId);
       if (activeSpriteId === spriteId && filtered.length > 0) {
@@ -140,7 +195,7 @@ export default function App() {
   // Load Hero Feature Collision Swap Preset Demo
   const handleLoadHeroDemo = () => {
     handleStop();
-    setSprites([
+    const heroSprites = [
       {
         id: "sprite_1",
         name: "Character 1",
@@ -154,7 +209,7 @@ export default function App() {
           createBlockInstance({
             type: "REPEAT",
             category: "controls",
-            times: 16,
+            times: 20,
             children: [
               createBlockInstance({ type: "MOVE_STEPS", category: "motion", steps: 10 }),
             ],
@@ -174,119 +229,183 @@ export default function App() {
           createBlockInstance({
             type: "REPEAT",
             category: "controls",
-            times: 16,
+            times: 20,
             children: [
               createBlockInstance({ type: "MOVE_STEPS", category: "motion", steps: -10 }),
             ],
           }),
         ],
       },
-    ]);
+    ];
+
+    setSprites(heroSprites);
     setActiveSpriteId("sprite_1");
     setHeroFeatureEnabled(true);
-    setCollisionNotification("⚡ Hero Demo Loaded! Click the Green Flag to see Collision Swap in action!");
-    setTimeout(() => setCollisionNotification(null), 4000);
+    setCollisionNotification("⚡ Hero Demo Loaded! Click Run to see Collision Swap in action!");
+    const timer = setTimeout(() => setCollisionNotification(null), 4000);
+    activeTimeoutsRef.current.add(timer);
   };
 
-  // Reset all sprites
+  // Stop all active scripts, animations, and timers
+  const handleStop = () => {
+    executionEpochRef.current++;
+    isRunningRef.current = false;
+    setIsRunning(false);
+    collidingPairsRef.current.clear();
+
+    // Cancel all active timeouts immediately
+    activeTimeoutsRef.current.forEach((timer) => clearTimeout(timer));
+    activeTimeoutsRef.current.clear();
+
+    // Clear any speech or thought bubbles
+    setSprites((prev) => prev.map((s) => ({ ...s, bubble: null })));
+    Object.values(runtimeStateRef.current).forEach((s) => {
+      if (s) s.bubble = null;
+    });
+  };
+
+  // Reset all sprites to initial positions
   const handleReset = () => {
     handleStop();
-    setSprites((prev) =>
-      prev.map((s, idx) => ({
-        ...s,
-        x: idx === 0 ? -120 : idx === 1 ? 120 : 0,
-        y: 0,
-        direction: 90,
-        bubble: null,
-      }))
-    );
+    const updated = sprites.map((s, idx) => ({
+      ...s,
+      x: idx === 0 ? -120 : idx === 1 ? 120 : 0,
+      y: 0,
+      direction: 90,
+      bubble: null,
+    }));
+    updated.forEach((s) => {
+      if (runtimeStateRef.current[s.id]) {
+        Object.assign(runtimeStateRef.current[s.id], {
+          x: s.x,
+          y: s.y,
+          direction: 90,
+          bubble: null,
+        });
+      }
+    });
+    setSprites(updated);
   };
 
-  // Collision Detection and Animation Swapping
-  const checkCollisionsAndSwap = useCallback(() => {
-    if (!heroFeatureEnabled || collisionCooldownRef.current) return;
+  // Deterministic Collision Detection & Animation Swapping with Lifecycle
+  const checkCollisionsAndSwap = (epoch) => {
+    if (!heroFeatureEnabled || !isRunningRef.current || executionEpochRef.current !== epoch) {
+      return null;
+    }
 
-    const currentSprites = spritesRef.current;
-    if (currentSprites.length < 2) return;
+    const currentSprites = Object.values(runtimeStateRef.current);
+    if (currentSprites.length < 2) return null;
+
+    let swappedSpriteIds = null;
 
     for (let i = 0; i < currentSprites.length; i++) {
       for (let j = i + 1; j < currentSprites.length; j++) {
         const s1 = currentSprites[i];
         const s2 = currentSprites[j];
+        if (!s1 || !s2) continue;
 
+        const pairKey = s1.id < s2.id ? `${s1.id}__${s2.id}` : `${s2.id}__${s1.id}`;
         const dist = Math.hypot(s1.x - s2.x, s1.y - s2.y);
+        const isColliding = dist < COLLISION_THRESHOLD;
 
-        if (dist < COLLISION_THRESHOLD) {
-          // Collision Detected!
-          collisionCooldownRef.current = true;
+        if (isColliding) {
+          if (!collidingPairsRef.current.has(pairKey)) {
+            // New collision event! Lifecycle enters 'colliding'
+            collidingPairsRef.current.add(pairKey);
 
-          // Swap animations between s1 and s2
-          const s1Actions = JSON.parse(JSON.stringify(s1.actions || []));
-          const s2Actions = JSON.parse(JSON.stringify(s2.actions || []));
+            // Deep clone actions to swap
+            const s1Actions = JSON.parse(JSON.stringify(s1.actions || []));
+            const s2Actions = JSON.parse(JSON.stringify(s2.actions || []));
 
-          setSprites((prev) =>
-            prev.map((s) => {
-              if (s.id === s1.id) {
-                return { ...s, actions: s2Actions };
-              }
-              if (s.id === s2.id) {
-                return { ...s, actions: s1Actions };
-              }
-              return s;
-            })
-          );
+            // Swap directions if different
+            const s1Dir = s1.direction ?? 90;
+            const s2Dir = s2.direction ?? 90;
 
-          setCollisionNotification(
-            `💥 Collision between ${s1.name} & ${s2.name}! Swapped their animations!`
-          );
+            runtimeStateRef.current[s1.id].actions = s2Actions;
+            runtimeStateRef.current[s2.id].actions = s1Actions;
+            if (s1Dir !== s2Dir) {
+              runtimeStateRef.current[s1.id].direction = s2Dir;
+              runtimeStateRef.current[s2.id].direction = s1Dir;
+            }
 
-          setTimeout(() => {
-            setCollisionNotification(null);
-          }, 3500);
+            setSprites((prev) =>
+              prev.map((s) => {
+                if (s.id === s1.id) {
+                  return {
+                    ...s,
+                    actions: s2Actions,
+                    direction: s1Dir !== s2Dir ? s2Dir : s.direction,
+                  };
+                }
+                if (s.id === s2.id) {
+                  return {
+                    ...s,
+                    actions: s1Actions,
+                    direction: s1Dir !== s2Dir ? s1Dir : s.direction,
+                  };
+                }
+                return s;
+              })
+            );
 
-          // Cooldown before next collision swap to avoid immediate oscillation
-          setTimeout(() => {
-            collisionCooldownRef.current = false;
-          }, 1200);
+            setCollisionNotification(
+              `💥 Collision between ${s1.name} & ${s2.name}! Swapped their animations!`
+            );
+            const notifTimer = setTimeout(() => {
+              setCollisionNotification(null);
+            }, 3000);
+            activeTimeoutsRef.current.add(notifTimer);
 
-          return { swapped: true, s1Id: s1.id, s2Id: s2.id };
+            swappedSpriteIds = [s1.id, s2.id];
+          }
+        } else if (dist > COLLISION_THRESHOLD + 10) {
+          // Sprites have separated! Clean transition in lifecycle allows next collision
+          if (collidingPairsRef.current.has(pairKey)) {
+            collidingPairsRef.current.delete(pairKey);
+          }
         }
       }
     }
-    return null;
-  }, [heroFeatureEnabled]);
+
+    return swappedSpriteIds;
+  };
 
   // Execute a single block for a sprite
-  const executeBlock = async (spriteId, block) => {
-    if (!isRunningRef.current) return;
+  const executeBlock = async (spriteId, block, epoch) => {
+    if (!isRunningRef.current || executionEpochRef.current !== epoch) return;
 
-    const getSprite = () => spritesRef.current.find((s) => s.id === spriteId);
+    const getSprite = () => runtimeStateRef.current[spriteId];
 
     switch (block.type) {
       case "MOVE_STEPS": {
         const steps = block.steps ?? 10;
-        const current = getSprite();
-        if (!current) return;
-
-        // Scratch angle standard: 90 is right, 0 is up
-        const rad = ((current.direction ?? 90) * Math.PI) / 180;
-        const dx = steps * Math.sin(rad);
-        const dy = steps * Math.cos(rad);
-
-        // Animate movement in 3 micro-steps for smooth visual flow
         const subSteps = 3;
+
         for (let i = 1; i <= subSteps; i++) {
-          if (!isRunningRef.current) break;
-          const target = getSprite();
-          if (!target) break;
+          if (!isRunningRef.current || executionEpochRef.current !== epoch) break;
+          const current = getSprite();
+          if (!current) break;
 
-          handleUpdateSprite(spriteId, {
-            x: Math.round(target.x + dx / subSteps),
-            y: Math.round(target.y + dy / subSteps),
-          });
+          // Scratch angle standard: 90 is right (+X), 0 is up (+Y), 180 is down (-Y), 270 is left (-X)
+          const rad = ((current.direction ?? 90) * Math.PI) / 180;
+          const dx = steps * Math.sin(rad);
+          const dy = steps * Math.cos(rad);
 
-          checkCollisionsAndSwap();
-          await sleep(35);
+          const nextX = Math.round(current.x + dx / subSteps);
+          const nextY = Math.round(current.y + dy / subSteps);
+
+          // Keep within stage boundary limits (-220 to 220, -160 to 160)
+          const boundedX = Math.max(-220, Math.min(220, nextX));
+          const boundedY = Math.max(-160, Math.min(160, nextY));
+
+          updateSpriteRuntime(spriteId, { x: boundedX, y: boundedY });
+
+          const swapped = checkCollisionsAndSwap(epoch);
+          if (swapped && swapped.includes(spriteId)) {
+            // Reversal on swap: finish this Move early so new swapped action takes effect immediately
+            break;
+          }
+          await sleep(30, epoch);
         }
         break;
       }
@@ -296,8 +415,8 @@ export default function App() {
         const current = getSprite();
         if (!current) return;
         const newDir = ((current.direction ?? 90) + deg) % 360;
-        handleUpdateSprite(spriteId, { direction: newDir });
-        await sleep(50);
+        updateSpriteRuntime(spriteId, { direction: newDir });
+        await sleep(40, epoch);
         break;
       }
 
@@ -305,66 +424,79 @@ export default function App() {
         const deg = block.degrees ?? 15;
         const current = getSprite();
         if (!current) return;
-        const newDir = ((current.direction ?? 90) - deg) % 360;
-        handleUpdateSprite(spriteId, { direction: newDir });
-        await sleep(50);
+        let newDir = ((current.direction ?? 90) - deg) % 360;
+        if (newDir < 0) newDir += 360;
+        updateSpriteRuntime(spriteId, { direction: newDir });
+        await sleep(40, epoch);
         break;
       }
 
       case "GOTO_XY": {
-        const targetX = block.x ?? 0;
-        const targetY = block.y ?? 0;
-        handleUpdateSprite(spriteId, { x: targetX, y: targetY });
-        checkCollisionsAndSwap();
-        await sleep(100);
+        const targetX = Math.max(-220, Math.min(220, block.x ?? 0));
+        const targetY = Math.max(-160, Math.min(160, block.y ?? 0));
+        updateSpriteRuntime(spriteId, { x: targetX, y: targetY });
+        checkCollisionsAndSwap(epoch);
+        await sleep(60, epoch);
         break;
       }
 
       case "SAY_FOR_SECS": {
         const msg = block.message ?? "Hello!";
-        const secs = block.seconds ?? 2;
-        handleUpdateSprite(spriteId, {
+        const secs = Math.max(0.2, block.seconds ?? 2);
+        updateSpriteRuntime(spriteId, {
           bubble: { type: "say", text: msg },
         });
-        await sleep(secs * 1000);
-        handleUpdateSprite(spriteId, { bubble: null });
+        await sleep(secs * 1000, epoch);
+        if (isRunningRef.current && executionEpochRef.current === epoch) {
+          updateSpriteRuntime(spriteId, { bubble: null });
+        }
         break;
       }
 
       case "THINK_FOR_SECS": {
         const msg = block.message ?? "Hmm...";
-        const secs = block.seconds ?? 2;
-        handleUpdateSprite(spriteId, {
+        const secs = Math.max(0.2, block.seconds ?? 2);
+        updateSpriteRuntime(spriteId, {
           bubble: { type: "think", text: msg },
         });
-        await sleep(secs * 1000);
-        handleUpdateSprite(spriteId, { bubble: null });
+        await sleep(secs * 1000, epoch);
+        if (isRunningRef.current && executionEpochRef.current === epoch) {
+          updateSpriteRuntime(spriteId, { bubble: null });
+        }
         break;
       }
 
       case "REPEAT": {
         const times = block.times ?? 5;
-        const innerBlocks = block.children || [];
 
         for (let t = 0; t < times; t++) {
-          if (!isRunningRef.current) break;
+          if (!isRunningRef.current || executionEpochRef.current !== epoch) break;
+
+          // Dynamically retrieve current version of repeat block for this sprite
+          // This allows swapped animations (from collisions) to execute immediately!
+          const currentSprite = getSprite();
+          const currentActions = currentSprite?.actions || [];
+          const activeRepeat =
+            findBlockById(currentActions, block.id) ||
+            findFirstRepeat(currentActions) ||
+            block;
+          const innerBlocks = activeRepeat.children || [];
 
           if (innerBlocks.length > 0) {
             for (const child of innerBlocks) {
-              if (!isRunningRef.current) break;
-              await executeBlock(spriteId, child);
+              if (!isRunningRef.current || executionEpochRef.current !== epoch) break;
+              await executeBlock(spriteId, child, epoch);
             }
           } else {
-            // Default motion if empty repeat
-            await executeBlock(spriteId, { type: "MOVE_STEPS", steps: 10 });
+            await executeBlock(spriteId, { type: "MOVE_STEPS", steps: 10 }, epoch);
           }
-          await sleep(60);
+          await sleep(40, epoch);
         }
         break;
       }
 
       case "WHEN_FLAG_CLICKED":
-        // Header block, proceed immediately
+        // Header block: proceeds immediately
         break;
 
       default:
@@ -373,63 +505,70 @@ export default function App() {
   };
 
   // Run script for a specific sprite
-  const runSpriteScript = async (spriteId) => {
-    const sprite = spritesRef.current.find((s) => s.id === spriteId);
+  const runSpriteScript = async (spriteId, epoch) => {
+    const sprite = runtimeStateRef.current[spriteId];
     if (!sprite || !sprite.actions) return;
 
-    for (const block of sprite.actions) {
-      if (!isRunningRef.current) break;
-      await executeBlock(spriteId, block);
+    for (let i = 0; i < (runtimeStateRef.current[spriteId]?.actions?.length || 0); i++) {
+      if (!isRunningRef.current || executionEpochRef.current !== epoch) break;
+      const currentActions = runtimeStateRef.current[spriteId]?.actions || [];
+      const block = currentActions[i];
+      if (block) {
+        await executeBlock(spriteId, block, epoch);
+      }
     }
   };
 
-  // Run all sprites concurrently (Play / Green Flag)
+  // Primary Run All sprites concurrently (Green Flag)
   const handlePlay = async () => {
-    if (isRunning) return;
+    if (isRunningRef.current) return;
 
-    setIsRunning(true);
+    const epoch = ++executionEpochRef.current;
     isRunningRef.current = true;
-    collisionCooldownRef.current = false;
+    setIsRunning(true);
+    collidingPairsRef.current.clear();
+
+    const activeSprites = Object.values(runtimeStateRef.current);
 
     try {
-      // Execute all sprites in parallel
-      await Promise.all(
-        spritesRef.current.map((sprite) => runSpriteScript(sprite.id))
+      await Promise.allSettled(
+        activeSprites.map((sprite) => runSpriteScript(sprite.id, epoch))
       );
-    } catch (err) {
-      // Aborted or finished
     } finally {
-      setIsRunning(false);
-      isRunningRef.current = false;
-      // Clear any remaining speech/thought bubbles
-      setSprites((prev) =>
-        prev.map((s) => ({ ...s, bubble: null }))
-      );
+      if (executionEpochRef.current === epoch) {
+        isRunningRef.current = false;
+        setIsRunning(false);
+        // Clear speech bubbles
+        setSprites((prev) => prev.map((s) => ({ ...s, bubble: null })));
+        Object.values(runtimeStateRef.current).forEach((s) => {
+          if (s) s.bubble = null;
+        });
+      }
     }
   };
 
-  // Stop all running animations
-  const handleStop = () => {
-    isRunningRef.current = false;
-    setIsRunning(false);
-    setSprites((prev) =>
-      prev.map((s) => ({ ...s, bubble: null }))
-    );
-  };
-
-  // Run only active sprite's script
+  // Run only active sprite's script (test single sprite)
   const handleRunSingleSprite = async (spriteId) => {
-    if (isRunning) return;
-    setIsRunning(true);
+    if (isRunningRef.current) return;
+
+    const epoch = ++executionEpochRef.current;
     isRunningRef.current = true;
+    setIsRunning(true);
+    collidingPairsRef.current.clear();
+
     try {
-      await runSpriteScript(spriteId);
+      await runSpriteScript(spriteId, epoch);
     } finally {
-      setIsRunning(false);
-      isRunningRef.current = false;
-      setSprites((prev) =>
-        prev.map((s) => (s.id === spriteId ? { ...s, bubble: null } : s))
-      );
+      if (executionEpochRef.current === epoch) {
+        isRunningRef.current = false;
+        setIsRunning(false);
+        setSprites((prev) =>
+          prev.map((s) => (s.id === spriteId ? { ...s, bubble: null } : s))
+        );
+        if (runtimeStateRef.current[spriteId]) {
+          runtimeStateRef.current[spriteId].bubble = null;
+        }
+      }
     }
   };
 
@@ -444,9 +583,9 @@ export default function App() {
   return (
     <div className="bg-blue-50 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
       {/* Top Main Navigation Header */}
-      <header className="h-12 bg-blue-600 text-white flex items-center justify-between px-4 shadow-sm flex-none z-30">
+      {/* <header className="h-12 bg-blue-600 text-white flex items-center justify-between px-4 shadow-sm flex-none z-30">
         <div className="flex items-center space-x-3">
-          {/* Scratch Logo Badge */}
+        
           <div className="flex items-center space-x-1.5 font-black text-lg tracking-tight bg-blue-700 px-2.5 py-1 rounded-md shadow-inner">
             <span className="text-yellow-400">SCRATCH</span>
             <span className="text-xs bg-yellow-400 text-blue-900 px-1.5 py-0.2 rounded font-bold">
@@ -458,38 +597,24 @@ export default function App() {
           </span>
         </div>
 
-        {/* Center Quick Controls */}
+        
         <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={handlePlay}
-            disabled={isRunning}
-            className={`px-3 py-1 text-xs font-bold rounded-full flex items-center space-x-1.5 transition-all shadow-sm ${
-              isRunning
-                ? "bg-green-300 text-green-900 cursor-not-allowed opacity-75"
-                : "bg-green-500 hover:bg-green-400 active:scale-95 text-white ring-2 ring-green-300"
-            }`}
-            title="Start (Green Flag)"
-          >
-            <Icon name="flag" size={14} className="text-white" />
-            <span>Go</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleStop}
-            className="px-3 py-1 text-xs font-bold bg-red-500 hover:bg-red-400 active:scale-95 text-white rounded-full flex items-center space-x-1.5 shadow-sm ring-2 ring-red-300 transition-all"
-            title="Stop All"
-          >
-            <Icon name="stop" size={12} />
-            <span>Stop</span>
-          </button>
+          {isRunning ? (
+            <div className="flex items-center space-x-2 bg-green-500 bg-opacity-30 border border-green-300 border-opacity-40 px-3 py-1 rounded-full text-xs text-green-100 font-semibold shadow-inner">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-ping inline-block" />
+              <span>Running Scripts...</span>
+            </div>
+          ) : (
+            <div className="text-xs text-blue-200 font-medium">
+              Ready to code
+            </div>
+          )}
         </div>
 
-        {/* Right Info & Hero Status */}
+       
         <div className="flex items-center space-x-3">
           <div
-            className={`text-xs px-2.5 py-0.5 rounded-full font-semibold flex items-center space-x-1 ${
+            className={`text-xs px-2.5 py-0.5 rounded-full font-semibold flex items-center space-x-1.5 ${
               heroFeatureEnabled
                 ? "bg-amber-400 text-amber-950 ring-1 ring-amber-300"
                 : "bg-blue-700 text-blue-200"
@@ -499,7 +624,7 @@ export default function App() {
             <span>Hero Swap {heroFeatureEnabled ? "ON" : "OFF"}</span>
           </div>
         </div>
-      </header>
+      </header> */}
 
       {/* Main Workspace Body */}
       <div className="flex-1 overflow-hidden flex flex-row p-2 gap-2">
@@ -508,6 +633,7 @@ export default function App() {
           <Sidebar onAddBlock={handleAddBlockToActiveSprite} />
           <MidArea
             activeSprite={activeSprite}
+            isRunning={isRunning}
             onUpdateSpriteActions={handleUpdateSpriteActions}
             onRunSpriteScript={handleRunSingleSprite}
             onClearSpriteScript={handleClearSingleSprite}
@@ -537,3 +663,4 @@ export default function App() {
     </div>
   );
 }
+
