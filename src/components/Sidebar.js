@@ -68,9 +68,14 @@ export default function Sidebar({ onAddBlock }) {
 
       {/* Palette Blocks List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        <div className="text-[11px] text-gray-400 font-medium pb-1 flex items-center justify-between">
+        <div
+          style={{ fontSize: "12px", lineHeight: "10px" }}
+          className="text-gray-400 font-medium pb-1 flex items-center justify-between"
+        >
           <span>DRAG BLOCKS TO WORKSPACE</span>
-          <span className="text-[10px] text-gray-400">(or click to add)</span>
+          <span style={{ fontSize: "8px", lineHeight: "9px" }}>
+            (or click to add)
+          </span>
         </div>
 
         {filteredTemplates.map((template, idx) => (
